@@ -1,0 +1,126 @@
+from django.shortcuts import render
+import os
+import uuid
+from django.conf import settings
+from django.http import FileResponse
+from rest_framework import status
+from rest_framework.response import Response
+from rest_framework.decorators import api_view, permission_classes, authentication_classes
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from .models import Conversation
+from voiceapp.serializers import ConversationSerializer
+from openai import OpenAI
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=OPENAI_API_KEY)
+
+processing_state = {
+    'should_download_file': False,
+    'current_audio_path': None
+}
+
+def process_with_gpt(text):
+    response = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[{"role": "user", "content": text}],
+        max_tokens=30
+    )
+    return response.choices[0].message.content
+
+def text_to_speech(text):
+    response = client.audio.speech.create(
+        model="tts-1",
+        voice="echo",
+        input=text,
+        response_format="wav"
+    )
+    filename = f"audio/response_{uuid.uuid4()}.wav"
+    full_path = os.path.join(settings.MEDIA_ROOT, filename)
+    os.makedirs(os.path.dirname(full_path), exist_ok=True)
+    response.stream_to_file(full_path)
+    return filename
+
+@permission_classes([AllowAny])
+@authentication_classes([AllowAny])
+@api_view(['POST'])
+def upload_audio(request):
+    audio_data = request.body
+    if not audio_data:
+        return Response({"error": "No audio file provided"}, status=status.HTTP_400_BAD_REQUEST)
+
+    temp_dir = os.path.join(settings.MEDIA_ROOT, "temp")
+    os.makedirs(temp_dir, exist_ok=True)
+    filename = f"temp_{uuid.uuid4()}.wav"
+    temp_path = os.path.join(temp_dir, filename)
+
+    try:
+        with open(temp_path, "wb") as f:
+            f.write(audio_data)
+
+        with open(temp_path, 'rb') as audio:
+            transcription = client.audio.transcriptions.create(
+                file=audio,
+                model="whisper-1",
+                response_format="text"
+            )
+
+        Conversation.objects.create(
+            is_CHATGPT=False,
+            message=transcription,
+            audio_input=temp_path
+        )
+
+        gpt_response = process_with_gpt(transcription)
+        audio_response_path = text_to_speech(gpt_response)
+
+        processing_state['should_download_file'] = True
+        processing_state['current_audio_path'] = audio_response_path
+
+        Conversation.objects.create(
+            is_CHATGPT=True,
+            message=gpt_response,
+            audio_output=audio_response_path
+        )
+
+        try:
+            os.remove(temp_path)
+        except Exception as e:
+            print(f"لم أستطع حذف الملف المؤقت: {e}")
+
+        return Response({
+            "transcription": transcription,
+            "gpt_response": gpt_response
+        }, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['GET'])
+def broadcast_audio(request):
+    audio_path = os.path.join(settings.MEDIA_ROOT, processing_state.get('current_audio_path') or "")
+    if not (processing_state.get('should_download_file') and processing_state.get('current_audio_path')):
+        return Response({"error": "No audio file available"}, status=status.HTTP_404_NOT_FOUND)
+    if not os.path.exists(audio_path):
+        return Response({"error": "Audio file not found"}, status=status.HTTP_406_NOT_ACCEPTABLE)
+
+    try:
+        audio_file = open(audio_path, 'rb')
+        response = FileResponse(audio_file, content_type='audio/wav')
+        response['Content-Disposition'] = 'attachment; filename="response.wav"'
+        processing_state['should_download_file'] = False
+        return response
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_conversations(request):
+    conversations = Conversation.objects.filter(user=request.user).order_by('-created_at')
+    serializer = ConversationSerializer(conversations, many=True)
+    return Response(serializer.data, status=status.HTTP_200_OK)
+
+@api_view(['GET'])
+def check_variable(request):
+    ready = processing_state.get('should_download_file', False)
+    return Response({"ready": ready}, status=status.HTTP_200_OK)
+

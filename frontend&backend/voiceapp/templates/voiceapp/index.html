@@ -1,0 +1,40 @@
+{% load static %} <!-- تحميل وسم static لاستخدام الملفات الثابتة (CSS/صور) -->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" /> <!-- تحديد الترميز UTF-8 -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0" /> <!-- جعل التصميم متجاوب -->
+<title>Welcome to AVA</title> <!-- عنوان التبويب -->
+
+<!-- استيراد ملف CSS الأساسي -->
+<link rel="stylesheet" href="{% static 'voiceapp/css/styles.css' %}">
+<!-- استيراد خطين من Google Fonts (Orbitron و Inter) -->
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+</head>
+
+<body>
+<div class="welcome-wrapper"> <!-- الحاوية الرئيسية لصفحة الترحيب -->
+
+  <div class="glow-bg"></div> <!-- خلفية متوهجة للتزيين -->
+
+  <div class="glass-card"> <!-- بطاقة زجاجية شفافة (تأثير واجهة) -->
+    <img src="{% static 'voiceapp/images/ava.png' %}" alt="AVA Logo" class="logo" /> <!-- شعار AVA -->
+    <h1 class="title">Welcome to <span>AVA</span></h1> <!-- عنوان رئيسي مع اسم AVA -->
+    <p class="subtitle">Your Intelligent Virtual Assistant</p> <!-- نص تعريفي فرعي -->
+
+    <!-- مجموعة أزرار الدخول والتسجيل -->
+    <div class="button-group">
+      <a href="{% url 'signin' %}" class="btn">Sign In</a> <!-- زر تسجيل الدخول -->
+      <a href="{% url 'signup' %}" class="btn secondary">Sign Up</a> <!-- زر إنشاء حساب جديد -->
+    </div>
+  </div>
+</div>
+
+<!-- تذييل الصفحة -->
+<footer>
+  <p>© 2025 AVA Project | Powered by Smart Minds</p> <!-- حقوق النشر -->
+</footer>
+
+</body>
+</html>

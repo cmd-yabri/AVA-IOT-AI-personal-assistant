@@ -1,0 +1,133 @@
+{% load static %} <!-- تحميل وسم static لاستخدام الملفات الثابتة -->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" /> <!-- تحديد الترميز UTF-8 -->
+  <meta name="viewport" content="width=device-width,initial-scale=1" /> <!-- جعل الصفحة متجاوبة -->
+  <title>Sign In / Sign Up</title> <!-- عنوان صفحة الدخول/التسجيل -->
+
+  <!-- أيقونات من FontAwesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <!-- أيقونات إضافية من Google -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0" />
+  <!-- ملف CSS الخاص بالصفحة -->
+  <link rel="stylesheet" href="{% static 'voiceapp/css/signin.css' %}?v=10">
+
+</head>
+<body>
+  <div class="container"> <!-- الحاوية الرئيسية -->
+
+    <div class="logo-container"> <!-- مكان الشعار -->
+      <img src="{% static 'voiceapp/images/ava.png' %}" alt="Logo" class="logo" />
+    </div>
+
+    <!-- عنصر يحتوي على النموذجين (login + signup) -->
+    <!-- إذا كان الرابط يحتوي signup → يضيف كلاس signup-active -->
+    <div class="forms {% if '/signup' in request.path %}signup-active{% endif %}" id="forms-container">
+
+      <!-- Form تسجيل الدخول -->
+      <form id="signin-form" method="post" action="{% url 'signin' %}">
+        {% csrf_token %} <!-- حماية CSRF -->
+        <h2>Sign In</h2>
+
+        <!-- حقل اسم المستخدم -->
+        <div class="input-group">
+          <i class="fas fa-user"></i>
+          <input type="text" name="username" placeholder="Username" required />
+        </div>
+
+        <!-- حقل كلمة المرور مع زر إظهار/إخفاء -->
+        <div class="input-group password-group">
+          <i class="fas fa-lock"></i>
+          <input type="password" id="signin-password" name="password" placeholder="Password" required />
+          <button type="button" class="toggle-password" data-target="#signin-password" aria-label="Show password">
+            <span class="material-symbols-rounded">visibility</span>
+          </button>
+        </div>
+
+        <!-- زر الإرسال -->
+        <button class="btn" type="submit">Sign In</button>
+        <!-- رابط للتبديل إلى صفحة التسجيل -->
+        <p class="toggle-text">
+          Don’t have an account?
+          <a class="inline-link" href="{% url 'signup' %}" id="show-signup">Sign Up</a>
+        </p>
+      </form>
+
+      <!-- Form إنشاء حساب -->
+      <form id="signup-form" method="post" action="{% url 'signup' %}">
+        {% csrf_token %}
+        <h2>Sign Up</h2>
+
+        <!-- اسم المستخدم -->
+        <div class="input-group">
+          <i class="fas fa-user"></i>
+          <input type="text" name="username" placeholder="Username" required />
+        </div>
+
+        <!-- البريد الإلكتروني (اختياري) -->
+        <div class="input-group">
+          <i class="fas fa-envelope"></i>
+          <input type="email" name="email" placeholder="Email (optional)" />
+        </div>
+
+        <!-- كلمة المرور مع زر إظهار/إخفاء -->
+        <div class="input-group password-group">
+          <i class="fas fa-lock"></i>
+          <input type="password" id="signup-password" name="password" placeholder="Password" required />
+          <button type="button" class="toggle-password" data-target="#signup-password" aria-label="Show password">
+            <span class="material-symbols-rounded">visibility</span>
+          </button>
+        </div>
+
+        <!-- زر الإرسال -->
+        <button class="btn" type="submit">Sign Up</button>
+        <!-- رابط للتبديل إلى تسجيل الدخول -->
+        <p class="toggle-text">
+          Already have an account?
+          <a class="inline-link" href="{% url 'signin' %}" id="show-signin">Sign In</a>
+        </p>
+      </form>
+
+    </div>
+  </div>
+
+  <!-- رسائل الأخطاء القادمة من Django -->
+  {% if messages %}
+    <ul class="messages">
+      {% for m in messages %}<li>{{ m }}</li>{% endfor %}
+    </ul>
+  {% endif %}
+
+  <!-- سكربت للتحكم بعرض/إخفاء كلمة المرور -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      // إخفاء زر الكشف الافتراضي ببعض المتصفحات (Edge/IE)
+      try {
+        const style = document.createElement('style');
+        style.textContent = 'input[type="password"]::-ms-reveal, input[type="password"]::-ms-clear { display: none; }';
+        document.head.appendChild(style);
+      } catch(e){}
+
+      // تبديل عرض/إخفاء كلمة المرور
+      document.querySelectorAll('.toggle-password').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const sel = btn.getAttribute('data-target');
+          const input = document.querySelector(sel);
+          if (!input) return;
+
+          const isHidden = input.type === 'password';
+          input.type = isHidden ? 'text' : 'password';
+
+          const icon = btn.querySelector('.material-symbols-rounded');
+          if (icon) icon.textContent = isHidden ? 'visibility_off' : 'visibility';
+        });
+      });
+    });
+  </script>
+
+  <!-- ملف جافاسكربت إضافي -->
+  <script src="{% static 'voiceapp/js/j.js' %}"></script>
+</body>
+</html>
