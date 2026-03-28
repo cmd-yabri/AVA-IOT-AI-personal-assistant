@@ -1,0 +1,233 @@
+*{ margin:0; padding:0; box-sizing:border-box; } /* إعادة ضبط عامة لكل العناصر: أصفار للهوامش والحشوات، وحساب الأبعاد مع الحدود */
+
+body{
+  font-family:'Inter', sans-serif; /* خط الواجهة */
+  background: radial-gradient(circle at top left, #1a1e3f, #0b0f2a 80%); /* خلفية متدرّجة دائرية من الزاوية العليا اليسرى */
+  color:#fff; /* لون النص أبيض */
+  height:100vh; /* ملء ارتفاع الشاشة */
+  display:flex; /* تمكين فليكس لوضع المحتوى في الوسط */
+  align-items:center; /* محاذاة عمودية في الوسط */
+  justify-content:center; /* محاذاة أفقية في الوسط */
+}
+
+.container{
+  position:relative; /* تموضع نسبي للطبقات الداخلية */
+  width:360px; /* عرض البطاقة */
+  background: rgba(255,255,255,0.05); /* خلفية زجاجية خفيفة الشفافية */
+  backdrop-filter: blur(15px); /* تمويه للخلفية (تأثير زجاجي) */
+  border-radius:20px; /* زوايا مستديرة */
+  padding:2rem; /* حشوة داخلية */
+  box-shadow:0 0 30px rgba(0,0,0,0.3); /* ظل لطيف حول البطاقة */
+  overflow:hidden; /* إخفاء أي تجاوز داخلي */
+  animation: fadeIn 0.8s ease; /* حركة دخول ناعمة */
+}
+
+@keyframes fadeIn {
+  from { opacity:0; transform:scale(0.95); } /* بداية: غير مرئي ومصغّر قليلاً */
+  to   { opacity:1; transform:scale(1); }    /* نهاية: مرئي بالحجم الكامل */
+}
+
+.logo-container{ text-align:center; margin-bottom:1.5rem; } /* حاوية الشعار: توسيط وهامش سفلي */
+
+.logo{
+  width:100px; /* حجم الشعار */
+  border-radius:12px; /* زوايا الشعار مستديرة */
+  box-shadow: 0 0 20px rgba(162,135,244,0.5); /* توهج بنفسجي حول الشعار */
+  animation: pulse 2s ease-in-out infinite; /* نبض مستمر */
+}
+@keyframes pulse { 0%,100%{ transform:scale(1);} 50%{ transform:scale(1.05);} } /* تعريف نبض الشعار */
+
+.forms{
+  position:relative; /* سياق تموضع للنماذج المطلقة داخله */
+  width:100%; /* عرض كامل للحاوية */
+  height:320px; /* ارتفاع ثابت يضم النموذجين */
+  overflow:hidden; /* إخفاء الأجزاء الخارجة أثناء السلايد */
+}
+
+form{
+  position:absolute; /* تموضع مطلق لكل نموذج داخل .forms */
+  top:0; /* محاذاة من الأعلى */
+  width:100%; /* عرض النموذج كامل */
+  transition: transform 0.5s ease-in-out, opacity 0.4s ease; /* انتقالات ناعمة عند التبديل */
+  opacity:0; /* افتراضيًا مخفي (سيظهر واحد لاحقًا) */
+}
+
+/* Initial state: Sign In visible */
+#signin-form{ transform: translateX(0); z-index:2; opacity:1; } /* إظهار فورم الدخول في البداية */
+#signup-form{ transform: translateX(100%); z-index:1; } /* إزاحة فورم التسجيل لليمين (خارج العرض) */
+
+/* When switching to Sign Up */
+.forms.signup-active #signin-form{
+  transform: translateX(-100%); /* عند التبديل: خروج الدخول لليسار */
+  z-index:1; opacity:0; /* خلف ومخفي */
+}
+.forms.signup-active #signup-form{
+  transform: translateX(0); /* إدخال التسجيل إلى مكانه */
+  z-index:2; opacity:1; /* أمامي ومرئي */
+}
+
+h2{
+  text-align:center; /* توسيط العنوان */
+  margin-bottom:1.5rem; /* هامش سفلي */
+  font-family:'Orbitron', sans-serif; /* خط مستقبلي للعناوين */
+  color:#a287f4; /* لون بنفسجي */
+  text-shadow: 0 0 10px #a287f4; /* توهج حول النص */
+}
+
+.input-group{ position:relative; margin-bottom:1.2rem; } /* مجموعة إدخال مع تموضع نسبي لوضع الأيقونة داخلاً */
+
+.input-group i{
+  position:absolute; top:50%; left:15px; transform:translateY(-50%); /* تموضع الأيقونة داخل الحقل يسار ووسط عمودياً */
+  color:#ccc; font-size:1rem; /* لون وحجم الأيقونة */
+}
+
+.input-group input{
+  width:100%; padding:0.75rem; padding-left:40px; /* فسحة يسار للأيقونة */
+  border:none; border-radius:30px; /* حواف دائرية */
+  background: rgba(255,255,255,0.08); /* خلفية شفافة */
+  color:#fff; outline:none; /* نص أبيض وبدون إطار تركيز افتراضي */
+}
+
+.input-group input::placeholder{ color:#eee; } /* لون العنونة المساعدة */
+.input-group input:focus{
+  border:1px solid #a287f4; /* إطار بنفسجي عند التركيز */
+  background: rgba(255,255,255,0.12); /* تفتيح بسيط للخلفية */
+}
+
+.btn{
+  width:100%; /* زر يعرض كامل العرض */
+  padding:0.8rem; /* حشوة مريحة */
+  border:none; /* بدون حدود */
+  border-radius:30px; /* حواف دائرية */
+  background: linear-gradient(to right, #6e7ff3, #a287f4); /* تدرج لوني على الزر */
+  color:#fff; /* نص أبيض */
+  font-weight:600; /* سمك خط متوسط */
+  font-size:1rem; /* حجم خط مناسب */
+  cursor:pointer; /* مؤشر كزر */
+  transition: transform 0.2s ease, box-shadow 0.3s ease; /* تأثيرات hover */
+  text-align:center; /* توسيط النص */
+  text-decoration:none;     /* مهم لأننا نستعمل <a> كزر */
+  display:inline-block; /* يمنح خصائص كتلية مع بقاءه سطرية */
+}
+
+.btn:hover{
+  transform: scale(1.02); /* تكبير خفيف عند التحويم */
+  box-shadow: 0 4px 15px rgba(162,135,244,0.4); /* ظل متوهج */
+}
+
+.toggle-text{
+  text-align:center; /* توسيط نص التحويل */
+  margin-top:1rem; /* هامش علوي */
+  font-size:0.9rem; /* حجم أصغر قليلاً */
+  color:#ccc; /* لون باهت */
+}
+
+.inline-link{
+  color:#a287f4; /* لون رابط بنفسجي */
+  cursor:pointer; /* مؤشر اليد */
+  font-weight:bold; /* خط عريض */
+  text-decoration:none; /* بدون تسطير افتراضي */
+}
+.inline-link:hover{ text-decoration:underline; } /* تسطير عند التحويم */
+
+/* اجبار صفحة signup تعرض تبويب التسجيل */
+body.signup-page #signin-form{
+  transform: translateX(-100%); /* إخفاء دخول */
+  z-index: 1;
+  opacity: 0;
+}
+body.signup-page #signup-form{
+  transform: translateX(0); /* إظهار تسجيل */
+  z-index: 2;
+  opacity: 1;
+}
+#signin-form { transform: translateX(0); z-index: 2; opacity: 1; } /* تأكيد الحالة الافتراضية للدخول */
+#signup-form { transform: translateX(100%); z-index: 1; opacity: 0; } /* تأكيد إزاحة التسجيل */
+
+/* لما تنضاف signup-active على الحاوية: Sign Up ظاهر */
+.forms.signup-active #signin-form {
+  transform: translateX(-100%);
+  z-index: 1; opacity: 0;
+}
+.forms.signup-active #signup-form {
+  transform: translateX(0);
+  z-index: 2; opacity: 1;
+}
+
+/* إخفِ زر الكشف المدمج على بعض المتصفحات (Edge القديم) */
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear { display: none; }
+
+/* حقل الباسوورد مع زر العين */
+/* زر العين جوة الحقل */
+/* ضبط مجموعة كلمة المرور */
+.input-group.password-group {
+  position: relative !important; /* تأكيد التموضع النسبي */
+  display: flex !important; /* استخدام فليكس لمحاذاة المحتوى */
+  align-items: center !important; /* توسيط عمودي */
+  overflow: visible !important; /* السماح بظهور الأزرار داخل/خارج الحقل */
+}
+
+/* خلي ارتفاع الحقل ثابت حتى تتمركز الأيقونات تماماً */
+.input-group input {
+  height: 48px !important; /* ارتفاع ثابت للحقل */
+  line-height: 48px !important; /* محاذاة النص عمودياً */
+  border: 1px solid transparent !important; /* تثبيت الارتفاع مع إطار شفاف */
+}
+.input-group input:focus {
+  border-color: #a287f4 !important; /* نفس لون الفوكس المعتمد */
+}
+
+/* فسحة للقفل يسار، والعين يمين */
+.password-group input[type="password"],
+.password-group input[type="text"] {
+  padding-left: 42px !important;   /* فراغ يسار لأيقونة القفل */
+  padding-right: 42px !important;  /* فراغ يمين لزر العين */
+  box-sizing: border-box !important; /* حساب الحشوات ضمن العرض */
+}
+
+/* القفل داخل الحقل يسار ومتمركز عمودياً */
+.password-group > i {
+  position: absolute !important;
+  left: 12px !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  color: #b9c2d3 !important; /* لون أيقونة القفل */
+  pointer-events: none !important; /* لا يتفاعل مع النقر */
+  margin: 0 !important;
+  font-size: 14px !important; /* حجم أيقونة مناسب */
+}
+
+/* زر العين داخل الحقل يمين ومتمركز عمودياً */
+.password-group .toggle-password {
+  position: absolute !important;
+  right: 12px !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+
+  width: 22px !important;
+  height: 22px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+
+  background: transparent !important; /* إزالة خلفية الزر */
+  border: 0 !important; /* بدون حدود */
+  padding: 0 !important;
+  margin: 0 !important;
+  color: #9aa3b2 !important; /* لون أيقونة العين */
+  cursor: pointer !important; /* مؤشر زر */
+  z-index: 3 !important; /* فوق عناصر الحقل */
+}
+
+/* حجم الأيقونة صغير وواضح */
+.password-group .toggle-password .material-symbols-rounded {
+  font-size: 18px !important;
+  line-height: 1 !important;
+}
+
+/* أخفي زر الكشف المدمج ببعض نسخ Edge/IE */
+.password-group input[type="password"]::-ms-reveal,
+.password-group input[type="password"]::-ms-clear {
+  display: none !important;
+}

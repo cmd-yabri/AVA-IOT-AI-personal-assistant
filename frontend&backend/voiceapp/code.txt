@@ -1,0 +1,692 @@
+from django.shortcuts import render
+import os
+import uuid
+from django.conf import settings
+from django.http import FileResponse
+from rest_framework import status
+from rest_framework.response import Response
+from rest_framework.decorators import (
+    api_view, permission_classes, authentication_classes,
+    parser_classes, renderer_classes
+)
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.parsers import JSONParser, FormParser, MultiPartParser, FileUploadParser
+from rest_framework.renderers import JSONRenderer, BrowsableAPIRenderer
+
+from .models import Conversation
+from voiceapp.serializers import ConversationSerializer
+from openai import OpenAI
+
+# ========= إعدادات قابلة للتعديل =========
+MAX_AUDIO_MB = getattr(settings, "MAX_AUDIO_MB", 25)
+CHUNK_SIZE   = getattr(settings, "AUDIO_CHUNK_SIZE", 1024 * 1024)
+# =========================================
+
+# مفتاح OpenAI ضمن الكود حسب طلبك
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=OPENAI_API_KEY)
+
+processing_state = {'should_download_file': False, 'current_audio_path': None}
+
+def process_with_gpt(text: str) -> str:
+    resp = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[{"role": "user", "content": text}],
+        max_tokens=60
+    )
+    return resp.choices[0].message.content
+
+def text_to_speech(text: str) -> str:
+    tts = client.audio.speech.create(
+        model="tts-1",
+        voice="echo",
+        input=text,
+        response_format="wav"
+    )
+    filename = f"audio/response_{uuid.uuid4()}.wav"
+    full_path = os.path.join(settings.MEDIA_ROOT, filename)
+    os.makedirs(os.path.dirname(full_path), exist_ok=True)
+    tts.stream_to_file(full_path)
+    return filename
+
+def _save_stream_to_file(input_stream, dest_path: str, max_bytes: int):
+    total = 0
+    os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+    with open(dest_path, "wb") as f:
+        while True:
+            chunk = input_stream.read(CHUNK_SIZE)
+            if not chunk: break
+            total += len(chunk)
+            if total > max_bytes:
+                f.close()
+                try: os.remove(dest_path)
+                except Exception: pass
+                return False, total
+            f.write(chunk)
+    return True, total
+
+@permission_classes([AllowAny])
+@authentication_classes([AllowAny])
+@parser_classes([JSONParser, FormParser, MultiPartParser, FileUploadParser])
+@renderer_classes([JSONRenderer, BrowsableAPIRenderer])  # يمنع 406
+@api_view(['POST'])
+def upload_audio(request):
+    """
+    يدعم:
+      - multipart/form-data (حقل 'audio')
+      - RAW audio/wav عبر FileUploadParser (يجب Content-Disposition: attachment; filename="...")
+
+    السلوك:
+      - إذا Accept يحوي audio/wav => يرجّع WAV مباشرة
+      - غير ذلك => JSON
+    """
+    max_bytes = MAX_AUDIO_MB * 1024 * 1024
+    temp_dir = os.path.join(settings.MEDIA_ROOT, "temp")
+    os.makedirs(temp_dir, exist_ok=True)
+    temp_filename = f"temp_{uuid.uuid4()}.wav"
+    temp_path = os.path.join(temp_dir, temp_filename)
+
+    # === التقاط الملف من كل الحالات المحتملة ===
+    audio_file = None
+    # 1) multipart: 'audio'
+    if hasattr(request, "FILES"):
+        audio_file = request.FILES.get('audio') or request.FILES.get('file')
+    # 2) DRF FileUploadParser: request.data['file'] قد يحوي UploadedFile
+    if audio_file is None and hasattr(request, "data"):
+        possible = request.data.get('file') or request.data.get('audio')
+        if getattr(possible, 'read', None):
+            audio_file = possible
+
+    if audio_file:
+        size_known = getattr(audio_file, 'size', None)
+        if size_known is not None and size_known > max_bytes:
+            return Response({"error": f"File too large. Max is {MAX_AUDIO_MB}MB"},
+                            status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
+        written = 0
+        with open(temp_path, "wb") as dest:
+            # إذا كان UploadedFile عنده chunks()
+            if hasattr(audio_file, "chunks"):
+                for chunk in audio_file.chunks(CHUNK_SIZE):
+                    written += len(chunk)
+                    if written > max_bytes:
+                        dest.close()
+                        try: os.remove(temp_path)
+                        except Exception: pass
+                        return Response({"error": f"File too large. Max is {MAX_AUDIO_MB}MB"},
+                                        status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
+                    dest.write(chunk)
+            else:
+                # fallback read()
+                data = audio_file.read()
+                written += len(data or b"")
+                if written > max_bytes:
+                    dest.close()
+                    try: os.remove(temp_path)
+                    except Exception: pass
+                    return Response({"error": f"File too large. Max is {MAX_AUDIO_MB}MB"},
+                                    status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
+                dest.write(data or b"")
+    else:
+        # 3) RAW stream يدويًا (لو تعدّت parsers)
+        input_stream = getattr(request, "stream", None) or request.META.get("wsgi.input")
+        if input_stream is None:
+            return Response({"error": "No audio data found"}, status=status.HTTP_400_BAD_REQUEST)
+        ok, total = _save_stream_to_file(input_stream, temp_path, max_bytes)
+        if not ok:
+            return Response({"error": f"File too large. Max is {MAX_AUDIO_MB}MB"},
+                            status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
+
+    # === المعالجة ===
+    try:
+        with open(temp_path, "rb") as audio:
+            transcription = client.audio.transcriptions.create(
+                file=audio,
+                model="whisper-1",
+                response_format="text"
+            )
+
+        try:
+            Conversation.objects.create(
+                is_CHATGPT=False,
+                message=transcription,
+                audio_input=temp_path
+            )
+        except Exception:
+            pass
+
+        gpt_response = process_with_gpt(transcription)
+        audio_response_rel = text_to_speech(gpt_response)
+        audio_abs = os.path.join(settings.MEDIA_ROOT, audio_response_rel)
+
+        processing_state['should_download_file'] = True
+        processing_state['current_audio_path'] = audio_response_rel
+
+        try:
+            Conversation.objects.create(
+                is_CHATGPT=True,
+                message=gpt_response,
+                audio_output=audio_response_rel
+            )
+        except Exception:
+            pass
+
+        accept = request.META.get("HTTP_ACCEPT", "") or ""
+        if "audio/wav" in accept or "audio/*" in accept:
+            try:
+                f = open(audio_abs, "rb")
+            except Exception as e:
+                return Response({"error": f"Audio open failed: {e}"},
+                                status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            resp = FileResponse(f, content_type="audio/wav")
+            resp["Content-Disposition"] = 'inline; filename="response.wav"'
+            if isinstance(transcription, str):
+                resp["X-Transcription"] = transcription[:200].replace("\n", " ")
+            resp["X-GPT-Text"] = gpt_response[:200].replace("\n", " ")
+            return resp
+
+        return Response({"transcription": transcription, "gpt_response": gpt_response},
+                        status=status.HTTP_200_OK)
+
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        try:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+        except Exception:
+            pass
+
+@api_view(['GET'])
+def broadcast_audio(request):
+    if not (processing_state.get('should_download_file') and processing_state.get('current_audio_path')):
+        return Response({"error": "No audio file available"}, status=status.HTTP_404_NOT_FOUND)
+    audio_path = os.path.join(settings.MEDIA_ROOT, processing_state['current_audio_path'])
+    if not os.path.exists(audio_path):
+        return Response({"error": "Audio file not found"}, status=status.HTTP_406_NOT_ACCEPTABLE)
+    try:
+        audio_file = open(audio_path, 'rb')
+        response = FileResponse(audio_file, content_type='audio/wav')
+        response['Content-Disposition'] = 'attachment; filename="response.wav"'
+        processing_state['should_download_file'] = False
+        return response
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_conversations(request):
+    conversations = Conversation.objects.filter(user=request.user).order_by('-created_at')
+    serializer = ConversationSerializer(conversations, many=True)
+    return Response(serializer.data, status=status.HTTP_200_OK)
+
+@api_view(['GET'])
+def check_variable(request):
+    return Response({"ready": processing_state.get('should_download_file', False)}, status=status.HTTP_200_OK)
+
+
+
+#include <WiFi.h>
+#include <SPIFFS.h>
+#include <driver/i2s.h>
+
+/* ===== Wi-Fi ===== */
+#define WIFI_SSID "MR"
+#define WIFI_PASS "asdasdasd"
+
+/* ===== Server ===== */
+const char* SERVER_BASE = "http://192.168.1.106:8000";
+const char* URL_UPLOAD  = "/upload-audio/";
+
+/* ===== Pins ===== */
+#define WIFI_LED   21
+#define TRANS_LED  19
+#define BTN_PIN    33
+
+// I2S - INMP441 mic
+#define I2S_WS   15
+#define I2S_SD   13
+#define I2S_SCK  2
+
+// I2S - MAX98357A DAC
+#define I2S_DOUT 25
+#define I2S_BCLK 26
+#define I2S_LRC  22
+
+/* ===== Recording (5s WAV 16kHz mono 16-bit) ===== */
+#define REC_PORT           I2S_NUM_0
+#define REC_SAMPLE_RATE    16000
+#define REC_BITS           I2S_BITS_PER_SAMPLE_16BIT
+#define REC_READ_LEN       (16 * 1024)
+#define REC_SECS           5
+#define WAV_HEADER_SIZE    44
+#define REC_CHANNELS       1
+#define REC_BYTES_TOTAL    (REC_CHANNELS * REC_SAMPLE_RATE * 2 * REC_SECS)
+
+/* ===== Playback ===== */
+#define PB_PORT            I2S_NUM_1
+#define PB_BITS            I2S_BITS_PER_SAMPLE_16BIT
+#define PB_IN_CHUNK        1024
+#define PB_OUT_CHUNK       (PB_IN_CHUNK * 2) // mono -> stereo
+
+/* ===== File ===== */
+const char* recPath = "/recording.wav";
+
+/* ===== Debounce ===== */
+const uint16_t DEBOUNCE_MS = 30;
+bool lastStable = false, lastRead = false;
+unsigned long lastChangeMs = 0;
+
+/* ===== State ===== */
+bool isRecording = false;
+
+/* ===== Prototypes ===== */
+void i2sInitMic();
+void i2sDeinitMic();
+void i2sInitDAC(uint32_t sampleRate);
+void i2sDeinitDAC();
+bool recordToSPIFFS();
+void wavHeader(byte *h, uint32_t dataBytes);
+static void scaleI2S(uint8_t *dst, uint8_t *src, uint32_t len);
+
+/* رفع + تشغيل فوري من نفس الرد */
+bool postMultipartAndPlay(const char* path);
+
+/* أدوات */
+bool parseServerBase(const char* base, String& host, uint16_t& port);
+bool playWavFromHTTPBody(WiFiClient& client);
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(WIFI_LED, OUTPUT);  digitalWrite(WIFI_LED, LOW);
+  pinMode(TRANS_LED, OUTPUT); digitalWrite(TRANS_LED, LOW);
+  pinMode(BTN_PIN, INPUT_PULLDOWN);
+
+  Serial.println("Ready. Press button to record 5s WAV, upload (multipart) and play immediate response.");
+
+  if (!SPIFFS.begin(true)) {
+    Serial.println("[FS] SPIFFS init FAILED");
+    while (1) delay(1000);
+  }
+
+  // Wi-Fi
+  Serial.print("Connecting to WiFi: "); Serial.println(WIFI_SSID);
+  WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);
+  WiFi.setAutoReconnect(true);
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  unsigned long t0 = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - t0 < 20000) {
+    digitalWrite(WIFI_LED, HIGH); delay(180);
+    digitalWrite(WIFI_LED, LOW);  delay(180);
+    Serial.print(".");
+  }
+  Serial.println();
+  digitalWrite(WIFI_LED, (WiFi.status()==WL_CONNECTED)?HIGH:LOW);
+
+  i2sInitMic();
+}
+
+void loop() {
+  digitalWrite(WIFI_LED, (WiFi.status() == WL_CONNECTED) ? HIGH : LOW);
+
+  bool raw = digitalRead(BTN_PIN);
+  bool logicalPressed = (raw == HIGH);
+
+  if (logicalPressed != lastRead) { lastRead = logicalPressed; lastChangeMs = millis(); }
+
+  if ((millis() - lastChangeMs) >= DEBOUNCE_MS) {
+    if (lastStable != logicalPressed) {
+      lastStable = logicalPressed;
+
+      if (lastStable && !isRecording) {
+        Serial.println("Pressed -> Start 5s recording...");
+        isRecording = true;
+        digitalWrite(TRANS_LED, HIGH);
+        bool ok = recordToSPIFFS();
+        digitalWrite(TRANS_LED, LOW);
+        isRecording = false;
+
+        if (!ok) { Serial.println("[REC] Recording failed."); return; }
+
+        File f = SPIFFS.open(recPath, FILE_READ);
+        if (f) { Serial.printf("[REC] File %s size = %d bytes\n", recPath, (int)f.size()); f.close(); }
+        else { Serial.println("[REC] File not found!"); return; }
+
+        if (WiFi.status() != WL_CONNECTED) { Serial.println("[NET] WiFi not connected."); return; }
+
+        Serial.println("[NET] Uploading (multipart) and expecting WAV in the same response...");
+        digitalWrite(TRANS_LED, HIGH);
+        bool ok2 = postMultipartAndPlay(recPath);
+        digitalWrite(TRANS_LED, LOW);
+        Serial.println(ok2 ? "[PLAY] Finished." : "[PLAY] Failed.");
+      } else if (!lastStable) {
+        Serial.println("Released");
+      }
+    }
+  }
+
+  delay(5);
+}
+
+/* ===== I2S MIC (INMP441) ===== */
+void i2sInitMic() {
+  i2s_config_t cfg = {};
+  cfg.mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX);
+  cfg.sample_rate = REC_SAMPLE_RATE;
+  cfg.bits_per_sample = REC_BITS;
+  cfg.channel_format = I2S_CHANNEL_FMT_ONLY_LEFT;
+  cfg.communication_format = I2S_COMM_FORMAT_STAND_I2S;
+  cfg.intr_alloc_flags = 0;
+  cfg.dma_buf_count = 64;
+  cfg.dma_buf_len = 1024;
+  cfg.use_apll = true;
+  cfg.tx_desc_auto_clear = false;
+  cfg.fixed_mclk = 0;
+
+  i2s_pin_config_t pins = {};
+  pins.bck_io_num   = I2S_SCK;
+  pins.ws_io_num    = I2S_WS;
+  pins.data_out_num = I2S_PIN_NO_CHANGE;
+  pins.data_in_num  = I2S_SD;
+#ifdef I2S_PIN_NO_CHANGE
+  pins.mck_io_num   = I2S_PIN_NO_CHANGE;
+#endif
+
+  i2s_driver_install(REC_PORT, &cfg, 0, NULL);
+  i2s_set_pin(REC_PORT, &pins);
+  i2s_zero_dma_buffer(REC_PORT);
+}
+
+void i2sDeinitMic() { i2s_driver_uninstall(REC_PORT); }
+
+/* ===== I2S DAC (MAX98357A) ===== */
+void i2sInitDAC(uint32_t sampleRate) {
+  i2s_config_t cfg = {};
+  cfg.mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX);
+  cfg.sample_rate = sampleRate;
+  cfg.bits_per_sample = PB_BITS;
+  cfg.channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT; // نخرج ستيريو دائمًا
+  cfg.communication_format = I2S_COMM_FORMAT_STAND_I2S;
+  cfg.intr_alloc_flags = ESP_INTR_FLAG_LEVEL1;
+  cfg.dma_buf_count = 8;
+  cfg.dma_buf_len = 512;
+  cfg.use_apll = false;
+  cfg.tx_desc_auto_clear = true;
+  cfg.fixed_mclk = 0;
+
+  i2s_pin_config_t pins = {};
+  pins.bck_io_num   = I2S_BCLK;
+  pins.ws_io_num    = I2S_LRC;
+  pins.data_out_num = I2S_DOUT;
+  pins.data_in_num  = I2S_PIN_NO_CHANGE;
+#ifdef I2S_PIN_NO_CHANGE
+  pins.mck_io_num   = I2S_PIN_NO_CHANGE;
+#endif
+
+  i2s_driver_install(PB_PORT, &cfg, 0, NULL);
+  i2s_set_pin(PB_PORT, &pins);
+  i2s_zero_dma_buffer(PB_PORT);
+  i2s_set_clk(PB_PORT, sampleRate, I2S_BITS_PER_SAMPLE_16BIT, I2S_CHANNEL_STEREO);
+}
+
+void i2sDeinitDAC() { i2s_driver_uninstall(PB_PORT); }
+
+/* ===== WAV header ===== */
+void wavHeader(byte *h, uint32_t dataBytes) {
+  uint32_t chunkSize = 36 + dataBytes;
+  uint16_t audioFmt  = 1, chans = 1, bits = 16;
+  uint32_t byteRate  = REC_SAMPLE_RATE * chans * (bits/8);
+  uint16_t blockAlgn = chans * (bits/8);
+
+  h[0]='R';h[1]='I';h[2]='F';h[3]='F';
+  h[4]= chunkSize &0xFF; h[5]=(chunkSize>>8)&0xFF; h[6]=(chunkSize>>16)&0xFF; h[7]=(chunkSize>>24)&0xFF;
+  h[8]='W';h[9]='A';h[10]='V';h[11]='E';
+  h[12]='f';h[13]='m';h[14]='t';h[15]=' ';
+  h[16]=16;h[17]=0;h[18]=0;h[19]=0;
+  h[20]= audioFmt &0xFF; h[21]=(audioFmt>>8)&0xFF;
+  h[22]= chans &0xFF; h[23]=(chans>>8)&0xFF;
+  h[24]= REC_SAMPLE_RATE &0xFF; h[25]=(REC_SAMPLE_RATE>>8)&0xFF; h[26]=(REC_SAMPLE_RATE>>16)&0xFF; h[27]=(REC_SAMPLE_RATE>>24)&0xFF;
+  h[28]= byteRate &0xFF; h[29]=(byteRate>>8)&0xFF; h[30]=(byteRate>>16)&0xFF; h[31]=(byteRate>>24)&0xFF;
+  h[32]= blockAlgn &0xFF; h[33]=(blockAlgn>>8)&0xFF;
+  h[34]= bits &0xFF; h[35]=(bits>>8)&0xFF;
+  h[36]='d';h[37]='a';h[38]='t';h[39]='a';
+  h[40]= dataBytes &0xFF; h[41]=(dataBytes>>8)&0xFF; h[42]=(dataBytes>>16)&0xFF; h[43]=(dataBytes>>24)&0xFF;
+}
+
+/* ===== INMP441 -> 16-bit PCM (تقريب) ===== */
+static void scaleI2S(uint8_t *dst, uint8_t *src, uint32_t len) {
+  uint32_t j = 0; uint32_t v = 0;
+  for (uint32_t i=0; i<len; i+=2) {
+    v = ((((uint16_t)(src[i+1] & 0x0F) << 8) | (src[i])));
+    dst[j++] = 0;
+    dst[j++] = v * 256 / 2048;
+  }
+}
+
+/* ===== Record 5s (exact size) ===== */
+bool recordToSPIFFS() {
+  if (SPIFFS.exists(recPath)) SPIFFS.remove(recPath);
+  File f = SPIFFS.open(recPath, FILE_WRITE);
+  if (!f) { Serial.println("[REC] open file failed"); return false; }
+
+  byte header[WAV_HEADER_SIZE];
+  wavHeader(header, REC_BYTES_TOTAL);
+  f.write(header, WAV_HEADER_SIZE);
+
+  char    *i2sBuf   = (char*)calloc(REC_READ_LEN, 1);
+  uint8_t *flashBuf = (uint8_t*)calloc(REC_READ_LEN, 1);
+  if (!i2sBuf || !flashBuf) { Serial.println("[REC] malloc failed"); if (i2sBuf) free(i2sBuf); if (flashBuf) free(flashBuf); f.close(); return false; }
+
+  size_t br = 0;
+  i2s_read(REC_PORT, i2sBuf, REC_READ_LEN, &br, portMAX_DELAY);
+  i2s_read(REC_PORT, i2sBuf, REC_READ_LEN, &br, portMAX_DELAY);
+
+  Serial.println("[REC] Recording 5s...");
+  int written = 0;
+  while (written < REC_BYTES_TOTAL) {
+    int remaining = REC_BYTES_TOTAL - written;
+    int toProcess = min(remaining, (int)REC_READ_LEN);
+    i2s_read(REC_PORT, i2sBuf, REC_READ_LEN, &br, portMAX_DELAY);
+    scaleI2S(flashBuf, (uint8_t*)i2sBuf, REC_READ_LEN);
+    f.write(flashBuf, toProcess);
+    written += toProcess;
+    int pct = (written * 100) / REC_BYTES_TOTAL;
+    Serial.printf("[REC] %d%%\n", pct > 100 ? 100 : pct);
+  }
+
+  free(i2sBuf);
+  free(flashBuf);
+  f.close();
+  Serial.println("[REC] Finished (exact size).");
+  return true;
+}
+
+/* ======== Upload (multipart) and play immediate response ======== */
+bool postMultipartAndPlay(const char* path) {
+  File f = SPIFFS.open(path, FILE_READ);
+  if (!f) { Serial.println("[NET] open file failed"); return false; }
+
+  String host; uint16_t port;
+  if (!parseServerBase(SERVER_BASE, host, port)) { Serial.println("[NET] SERVER_BASE parse failed"); f.close(); return false; }
+
+  String boundary = "----ESP32FormBoundary7MA4YWxkTrZu0gW";
+  String head = "--" + boundary + "\r\n"
+                "Content-Disposition: form-data; name=\"audio\"; filename=\"recording.wav\"\r\n"
+                "Content-Type: audio/wav\r\n\r\n";
+  String tail = "\r\n--" + boundary + "--\r\n";
+
+  size_t contentLength = head.length() + f.size() + tail.length();
+  String pathOnly = String(URL_UPLOAD);
+
+  WiFiClient client;
+  if (!client.connect(host.c_str(), port)) { Serial.println("[NET] TCP connect failed"); f.close(); return false; }
+
+  // Request + headers
+  client.printf("POST %s HTTP/1.1\r\n", pathOnly.c_str());
+  client.printf("Host: %s:%u\r\n", host.c_str(), port);
+  client.print("Connection: close\r\n");
+  client.printf("Content-Type: multipart/form-data; boundary=%s\r\n", boundary.c_str());
+  client.printf("Content-Length: %u\r\n", (unsigned)contentLength);
+  client.print("\r\n");
+
+  // Body
+  client.print(head);
+  uint8_t buf[1024];
+  while (f.available()) {
+    int n = f.read(buf, sizeof(buf));
+    if (n > 0) client.write(buf, n);
+  }
+  f.close();
+  client.print(tail);
+
+  // === اقرأ حالة الردّ ===
+  String statusLine = client.readStringUntil('\n'); // e.g., HTTP/1.1 200 OK
+  statusLine.trim();
+  Serial.println("[NET] Resp: " + statusLine);
+  if (!statusLine.startsWith("HTTP/1.1 200")) {
+    // اطبع أي هيدر مفيد
+    int hdrLines = 0;
+    while (client.connected() && hdrLines < 20) {
+      String line = client.readStringUntil('\n');
+      if (line == "\r" || line.length() == 0) break;
+      hdrLines++;
+      Serial.print("[NET] H: "); Serial.print(line);
+    }
+    client.stop();
+    return false;
+  }
+
+  // === تخطّي ترويسات HTTP حتى الـ CRLF CRLF ===
+  while (client.connected()) {
+    String line = client.readStringUntil('\n');
+    if (line == "\r" || line.length() == 0) break;
+    // ممكن تطبع/تفحص Content-Type هون
+    // Serial.print("[NET] H: "); Serial.print(line);
+  }
+
+  // === باقي الاتصال هو جسم الرد (WAV). نشغّله مباشرة ===
+  bool ok = playWavFromHTTPBody(client);
+  client.stop();
+  return ok;
+}
+
+/* تشغيل WAV عبر تفكيك الهيدر ديناميكياً من stream مفتوح */
+bool playWavFromHTTPBody(WiFiClient& stream) {
+  auto readN = [&](uint8_t* buf, size_t n) -> bool {
+    size_t got = 0;
+    while (got < n && stream.connected()) {
+      int r = stream.readBytes(buf + got, n - got);
+      if (r <= 0) return false;
+      got += r;
+    }
+    return got == n;
+  };
+  auto readU32 = [&](uint8_t* b) -> uint32_t { return (uint32_t)b[0] | ((uint32_t)b[1] << 8) | ((uint32_t)b[2] << 16) | ((uint32_t)b[3] << 24); };
+  auto readU16 = [&](uint8_t* b) -> uint16_t { return (uint16_t)b[0] | ((uint16_t)b[1] << 8); };
+
+  uint8_t hdr[12];
+  if (!readN(hdr, 12)) { Serial.println("[WAV] header too short"); return false; }
+  if (memcmp(hdr, "RIFF", 4) != 0 || memcmp(hdr + 8, "WAVE", 4) != 0) {
+    Serial.println("[WAV] Not RIFF/WAVE");
+    return false;
+  }
+
+  uint32_t sampleRate = 16000;
+  uint16_t bitsPerSample = 16;
+  uint16_t numChannels = 1;
+  bool fmtSeen = false;
+
+  while (stream.connected()) {
+    uint8_t ch[8];
+    if (!readN(ch, 8)) { Serial.println("[WAV] chunk hdr short"); return false; }
+    char id[5] = { (char)ch[0], (char)ch[1], (char)ch[2], (char)ch[3], 0 };
+    uint32_t chunkSize = readU32(ch + 4);
+
+    if (!strcmp(id, "fmt ")) {
+      if (chunkSize < 16) { Serial.println("[WAV] fmt too small"); return false; }
+      uint8_t fmtBuf[40];
+      size_t toRead = min<uint32_t>(chunkSize, sizeof(fmtBuf));
+      if (!readN(fmtBuf, toRead)) { Serial.println("[WAV] fmt read fail"); return false; }
+      if (chunkSize > toRead) {
+        uint32_t remain = chunkSize - toRead;
+        while (remain) {
+          uint8_t sink[64];
+          int r = stream.readBytes(sink, min((uint32_t)sizeof(sink), remain));
+          if (r <= 0) return false;
+          remain -= r;
+        }
+      }
+      uint16_t audioFmt = readU16(fmtBuf + 0);
+      numChannels      = readU16(fmtBuf + 2);
+      sampleRate       = readU32(fmtBuf + 4);
+      bitsPerSample    = readU16(fmtBuf + 14);
+      Serial.printf("[WAV] fmt: fmt=%u ch=%u sr=%u bits=%u\n", audioFmt, numChannels, sampleRate, bitsPerSample);
+      if (audioFmt != 1 || bitsPerSample != 16 || (numChannels != 1 && numChannels != 2)) {
+        Serial.println("[WAV] unsupported wav format");
+        return false;
+      }
+      fmtSeen = true;
+    }
+    else if (!strcmp(id, "data")) {
+      if (!fmtSeen) { Serial.println("[WAV] data before fmt"); return false; }
+      Serial.printf("[WAV] data size=%u, sr=%u, ch=%u\n", chunkSize, sampleRate, numChannels);
+
+      // حضّر I2S
+      i2sDeinitDAC();
+      i2sInitDAC(sampleRate);
+
+      uint8_t inBuf[PB_IN_CHUNK];
+      uint8_t outBuf[PB_OUT_CHUNK];
+      uint32_t remaining = chunkSize;
+
+      while (remaining > 0 && stream.connected()) {
+        int toRead = (int)min<uint32_t>(PB_IN_CHUNK, remaining);
+        int r = stream.readBytes(inBuf, toRead);
+        if (r <= 0) break;
+        remaining -= r;
+
+        if (numChannels == 1) {
+          int outIdx = 0;
+          for (int i = 0; i + 1 < r; i += 2) {
+            uint8_t lo = inBuf[i], hi = inBuf[i+1];
+            outBuf[outIdx++] = lo; outBuf[outIdx++] = hi; // L
+            outBuf[outIdx++] = lo; outBuf[outIdx++] = hi; // R
+          }
+          size_t written = 0;
+          i2s_write(PB_PORT, outBuf, outIdx, &written, portMAX_DELAY);
+        } else {
+          size_t written = 0;
+          i2s_write(PB_PORT, inBuf, r, &written, portMAX_DELAY);
+        }
+      }
+
+      i2sDeinitDAC();
+      return true;
+    }
+    else {
+      // تخطّي أي chunk آخر
+      uint32_t remain = chunkSize;
+      while (remain) {
+        uint8_t sink[256];
+        int r = stream.readBytes(sink, min(remain, (uint32_t)sizeof(sink)));
+        if (r <= 0) return false;
+        remain -= r;
+      }
+    }
+  }
+  return false;
+}
+
+/* ===== Helpers ===== */
+bool parseServerBase(const char* base, String& host, uint16_t& port) {
+  String s = String(base);
+  if (s.startsWith("http://")) s.remove(0, 7);
+  int slash = s.indexOf('/');
+  if (slash >= 0) s = s.substring(0, slash);
+  int colon = s.indexOf(':');
+  if (colon < 0) { host = s; port = 80; return host.length() > 0; }
+  host = s.substring(0, colon);
+  port = (uint16_t)s.substring(colon + 1).toInt();
+  if (port == 0) port = 80;
+  return host.length() > 0;
+}

@@ -1,0 +1,167 @@
+/* ========== THEME VARIABLES ========== */
+:root{
+  /* ألوان الثيم الغامق (الافتراضي) */
+  --text-color:#edf3ff;              /* لون النص الأساسي */
+  --subheading-color:#97a7ca;        /* لون النص الثانوي (عناوين فرعية) */
+  --placeholder-color:#c3cdde;       /* لون placeholder في الحقول */
+  --primary-color:#101623;           /* خلفية رئيسية داكنة */
+  --secondary-color:#283045;         /* لون خلفية ثانوية للعناصر */
+  --secondary-hover-color:#333e58;   /* لون عند تمرير الماوس */
+  --scrollbar-color:#626a7f;         /* لون شريط التمرير */
+}
+
+/* ثيم فاتح: يعيد تعريف المتغيرات */
+body.light-theme{
+  --text-color:#090c13;
+  --subheading-color:#7b8cae;
+  --placeholder-color:#606982;
+  --primary-color:#f3f7ff;
+  --secondary-color:#dce6f9;
+  --secondary-hover-color:#d2ddf2;
+  --scrollbar-color:#a2aac2;
+}
+
+/* ========== BASE ========== */
+*{ margin:0; padding:0; box-sizing:border-box; } /* إعادة ضبط عامة */
+body{
+  color:var(--text-color);                   /* لون النص */
+  background:var(--primary-color);           /* خلفية الصفحة */
+  font-family: system-ui, -apple-system,  /* خطوط أساسية */
+}
+.container{ padding:32px 0 60px; }           /* مسافات داخل الحاوية */
+.container :where(.app-header, .prompt-wrapper, .disclaimer-text, .message, .suggestions){
+  margin:0 auto; width:100%; padding:0 28px; max-width:980px; /* توسيط وتحديد عرض أقصى */
+}
+
+/* Scrollbar (webkit) */
+*::-webkit-scrollbar{ height:10px; width:10px; }
+*::-webkit-scrollbar-thumb{ background:var(--scrollbar-color); border-radius:20px; }
+
+/* ========== HEADER ========== */
+.container .app-header{
+  margin-top:4vh;
+  transition: opacity 220ms ease, height 220ms ease, margin 220ms ease; /* حركة سلسة عند الإخفاء */
+}
+.app-header .heading{
+  font-size:3rem; width:fit-content;
+  background:linear-gradient(to right,#1d7efd,#8f6fff); /* تدرج لوني للنص */
+  background-clip:text; -webkit-background-clip:text;
+  -webkit-text-fill-color:transparent; color:transparent; /* يظهر التدرج على النص */
+}
+.app-header .sub-heading{
+  font-size:2rem; margin-top:6px; color:var(--subheading-color);
+}
+
+/* ========== SUGGESTIONS ========== */
+.container .suggestions{
+  display:flex; gap:15px; margin-top:9.5vh; list-style:none;
+  overflow-x:auto; scrollbar-width:thin;
+  transition: opacity 220ms ease, height 220ms ease, margin 220ms ease;
+}
+.suggestions .suggestions-item{
+  width:228px; padding:18px; border-radius:12px; flex-shrink:0; display:flex; cursor:pointer;
+  flex-direction:column; align-items:flex-end; justify-content:space-between;
+  background:var(--secondary-color); transition:.25s ease;
+}
+.suggestions .suggestions-item:hover{ background:var(--secondary-hover-color); }
+.suggestions .suggestions-item .text{ font-size:1.05rem; line-height:1.35; }
+.suggestions .suggestions-item span{
+  height:45px; width:45px; margin-top:35px; display:flex; align-items:center; justify-content:center;
+  border-radius:50%; color:#1d7efd; background:var(--primary-color);
+}
+.suggestions .suggestions-item:nth-child(2) span{ color:#28a745; } /* لون أخضر */
+.suggestions .suggestions-item:nth-child(3) span{ color:#ffc107; } /* لون أصفر */
+.suggestions .suggestions-item:nth-child(4) span{ color:#6f42c1; } /* لون بنفسجي */
+
+/* ✅ إخفاء الهيدر + الاقتراحات عند وجود محادثة */
+body.chats-active .app-header,
+body.chats-active .suggestions {
+  opacity: 0; height: 0; margin: 0;
+  overflow: hidden; pointer-events: none;
+}
+
+/* ✅ دعم Edge: إذا في أي رسالة داخل الشات */
+.container:has(.chats-container .message) .app-header,
+.container:has(.chats-container .message) .suggestions {
+  opacity: 0 !important; height: 0 !important; margin: 0 !important;
+  overflow: hidden !important; pointer-events: none !important;
+}
+
+/* دعم JS إذا أضيف is-hidden */
+.suggestions.is-hidden {
+  opacity: 0; height: 0; margin: 0;
+  overflow: hidden; pointer-events: none;
+}
+
+/* ========== CHATS ========== */
+.container .chats-container{ display:flex; gap:20px; flex-direction:column; }
+.chats-container .message{ display:flex; gap:11px; align-items:center; }
+.chats-container .bot-message .avatar{
+  height:43px; width:43px; flex-shrink:0; padding:6px; align-self:flex-start; margin-right:-7px;
+  border-radius:50%; background:var(--secondary-color);
+  border:1px solid var(--secondary-hover-color);
+}
+.chats-container .bot-message.loading .avatar{ animation: rotate 3s linear infinite; }
+@keyframes rotate{ 100%{ transform: rotate(360deg);} }
+
+.chats-container .message .message-text{
+  padding:3px 16px; white-space:pre-line; word-wrap:break-word; max-width:75%;
+}
+.chats-container .bot-message{ margin:9px auto 0 0; }
+.chats-container .user-message{ flex-direction:column; align-items:flex-end; }
+.chats-container .user-message .message-text{
+  padding:12px 16px; max-width:75%;
+  border-radius:13px 13px 3px 13px; background:var(--secondary-color);
+}
+
+/* ========== PROMPT ========== */
+.prompt-container{
+  position:fixed; bottom:0; left:0; width:100%; padding:16px 0;
+  background:var(--primary-color);
+}
+.prompt-container :where(.prompt-wrapper, .prompt-form, .prompt-actions){
+  display:flex; gap:12px; height:56px; align-items:center;
+}
+.prompt-wrapper .prompt-form{
+  width:100%; height:100%; border-radius:130px; background:var(--secondary-color);
+}
+.prompt-form .prompt-input{
+  height:100%; width:100%; background:none; outline:none; border:none;
+  font-size:1rem; padding-left:24px; color:var(--text-color);
+}
+.prompt-form .prompt-input::placeholder{ color:var(--placeholder-color); }
+
+.prompt-wrapper button{
+  height:100%; width:56px; border:none; border-radius:50%; font-size:1.4rem; flex-shrink:0;
+  color:var(--text-color); background:var(--secondary-color); transition:.25s ease;
+}
+.prompt-wrapper button:hover{ background:var(--secondary-hover-color); }
+
+.prompt-form .prompt-actions{ gap:4px; margin-right:7px; }
+.prompt-form .prompt-actions button{ height:45px; width:45px; }
+.prompt-form #send-prompt-btn{
+  color:#fff; display:none; background:#1d7efd;
+}
+.prompt-form .prompt-input:valid ~ .prompt-actions #send-prompt-btn{
+  display:block;
+}
+.prompt-form #send-prompt-btn:hover{ background:#0264e3; }
+
+.prompt-container .disclaimer-text{
+  text-align:center; font-size:.9rem; padding-left:16px; padding-top:20px;
+  color:var(--placeholder-color);
+}
+
+/* ========== RESPONSIVE ========== */
+@media (max-width: 640px){
+  .app-header .heading{ font-size:2.2rem; } /* أصغر للعناوين */
+  .app-header .sub-heading{ font-size:1.4rem; }
+}
+
+/* ✨ احترام تفضيل تقليل الحركة */
+@media (prefers-reduced-motion: reduce){
+  .app-header,
+  .suggestions{
+    transition: none !important; /* تعطيل الانتقالات */
+  }
+}
