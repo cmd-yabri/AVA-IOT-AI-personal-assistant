@@ -1,39 +1,39 @@
-{% load static %} <!-- تحميل وسم static لاستخدام الملفات الثابتة (CSS/صور) -->
+{% load static %} <!-- load the static tag for static files (CSS/images) -->
 
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" /> <!-- تحديد الترميز UTF-8 -->
-<meta name="viewport" content="width=device-width, initial-scale=1.0" /> <!-- جعل التصميم متجاوب -->
-<title>Welcome to AVA</title> <!-- عنوان التبويب -->
+<meta charset="UTF-8" /> <!-- UTF-8 encoding -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0" /> <!-- responsive layout -->
+<title>Welcome to AVA</title> <!-- tab title -->
 
-<!-- استيراد ملف CSS الأساسي -->
+<!-- import the main stylesheet -->
 <link rel="stylesheet" href="{% static 'voiceapp/css/styles.css' %}">
-<!-- استيراد خطين من Google Fonts (Orbitron و Inter) -->
+<!-- import two Google Fonts (Orbitron and Inter) -->
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600&family=Inter:wght@400;600&display=swap" rel="stylesheet">
 </head>
 
 <body>
-<div class="welcome-wrapper"> <!-- الحاوية الرئيسية لصفحة الترحيب -->
+<div class="welcome-wrapper"> <!-- main container for the welcome page -->
 
-  <div class="glow-bg"></div> <!-- خلفية متوهجة للتزيين -->
+  <div class="glow-bg"></div> <!-- decorative glowing background -->
 
-  <div class="glass-card"> <!-- بطاقة زجاجية شفافة (تأثير واجهة) -->
-    <img src="{% static 'voiceapp/images/ava.png' %}" alt="AVA Logo" class="logo" /> <!-- شعار AVA -->
-    <h1 class="title">Welcome to <span>AVA</span></h1> <!-- عنوان رئيسي مع اسم AVA -->
-    <p class="subtitle">Your Intelligent Virtual Assistant</p> <!-- نص تعريفي فرعي -->
+  <div class="glass-card"> <!-- transparent glass card -->
+    <img src="{% static 'voiceapp/images/ava.png' %}" alt="AVA Logo" class="logo" /> <!-- AVA logo -->
+    <h1 class="title">Welcome to <span>AVA</span></h1> <!-- main heading with the AVA name -->
+    <p class="subtitle">Your Intelligent Virtual Assistant</p> <!-- short introduction -->
 
-    <!-- مجموعة أزرار الدخول والتسجيل -->
+    <!-- sign-in and sign-up buttons -->
     <div class="button-group">
-      <a href="{% url 'signin' %}" class="btn">Sign In</a> <!-- زر تسجيل الدخول -->
-      <a href="{% url 'signup' %}" class="btn secondary">Sign Up</a> <!-- زر إنشاء حساب جديد -->
+      <a href="{% url 'signin' %}" class="btn">Sign In</a> <!-- sign-in button -->
+      <a href="{% url 'signup' %}" class="btn secondary">Sign Up</a> <!-- create-account button -->
     </div>
   </div>
 </div>
 
-<!-- تذييل الصفحة -->
+<!-- page footer -->
 <footer>
-  <p>© 2025 AVA Project | Powered by Smart Minds</p> <!-- حقوق النشر -->
+  <p>© 2025 AVA Project | Powered by Smart Minds</p> <!-- copyright -->
 </footer>
 
 </body>

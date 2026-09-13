@@ -1,30 +1,30 @@
-{% load static %} <!-- تحميل وسم static لاستخدام ملفات ثابتة (CSS/JS/صور) -->
+{% load static %} <!-- load the static tag for static files (CSS/JS/images) -->
 
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" /> <!-- تحديد الترميز UTF-8 -->
-  <meta name="viewport" content="width=device-width,initial-scale=1" /> <!-- لجعل الصفحة متجاوبة مع الموبايل -->
-  <title>AVA Chat</title> <!-- عنوان الصفحة -->
+  <meta charset="UTF-8" /> <!-- UTF-8 encoding -->
+  <meta name="viewport" content="width=device-width,initial-scale=1" /> <!-- make the page responsive on mobile -->
+  <title>AVA Chat</title> <!-- page title -->
 
-  <!-- استيراد أيقونات من Google Fonts -->
+  <!-- import icons from Google Fonts -->
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0" />
-  <!-- تحميل ملف CSS الخاص بالمحادثة -->
+  <!-- load the chat stylesheet -->
   <link rel="stylesheet" href="{% static 'voiceapp/css/chat.css' %}" />
 </head>
 <body class="{% if history and history|length > 0 %}chats-active{% endif %}">
-  <!-- إضافة كلاس chats-active إذا كان هناك تاريخ محادثة -->
+  <!-- add the chats-active class when there is chat history -->
 
   <div class="container">
     <!-- Header -->
     <header class="app-header"> 
-      <h1 class="heading">Hello, there</h1> <!-- العنوان الرئيسي -->
-      <h2 class="sub-heading">How can I help you today?</h2> <!-- العنوان الفرعي -->
+      <h1 class="heading">Hello, there</h1> <!-- main heading -->
+      <h2 class="sub-heading">How can I help you today?</h2> <!-- subheading -->
     </header>
 
     <!-- Suggestions -->
     <ul class="suggestions {% if history and history|length > 0 %}is-hidden{% endif %}">
-      <!-- قائمة اقتراحات أولية، تُخفى إذا هناك رسائل محفوظة -->
+      <!-- initial suggestions, hidden when there are saved messages -->
       <li class="suggestions-item"> 
         <p class="text">Design a home office setup for remote work under 500$.</p>
         <span class="material-symbols-rounded">draw</span>
@@ -45,19 +45,19 @@
 
     <!-- Chat container -->
     <div class="chats-container" id="chats">
-      {% for m in history %} <!-- حلقة تمر على الرسائل المحفوظة -->
-        {% if m.is_CHATGPT %} <!-- إذا كانت رسالة من البوت -->
+      {% for m in history %} <!-- loop over saved messages -->
+        {% if m.is_CHATGPT %} <!-- if the message is from the bot -->
           <div class="message bot-message">
             <img src="{% static 'voiceapp/images/ava.png' %}" class="avatar" alt="AVA">
             <p class="message-text">{{ m.message|linebreaksbr }}</p>
           </div>
-        {% else %} <!-- إذا كانت رسالة من المستخدم -->
+        {% else %} <!-- if the message is from the user -->
           <div class="message user-message">
             <p class="message-text">{{ m.message|linebreaksbr }}</p>
           </div>
         {% endif %}
       {% empty %}
-        <!-- لا يوجد رسائل بعد -->
+        <!-- no messages yet -->
       {% endfor %}
     </div>
 
@@ -65,14 +65,14 @@
     <div class="prompt-container"> 
       <div class="prompt-wrapper">
         <form action="#" class="prompt-form">
-          {% csrf_token %} <!-- حماية CSRF -->
+          {% csrf_token %} <!-- CSRF protection -->
           <input type="text" placeholder="Ask AVA" class="prompt-input" required>
-          <!-- حقل إدخال النص -->
+          <!-- text input -->
           <div class="prompt-actions">
             <button id="send-prompt-btn" type="submit" class="material-symbols-rounded">arrow_upward</button>
           </div>
         </form>
-        <!-- أزرار إضافية -->
+        <!-- extra buttons -->
         <button id="theme-toggle-btn" class="material-symbols-rounded" title="Toggle theme">light_mode</button>
         <button id="delete-chat-btn" class="material-symbols-rounded" title="Clear chat">delete</button>
       </div>
@@ -80,48 +80,48 @@
     </div>
   </div>
 
-  <!-- URLs من Django (للاستخدام في جافاسكربت) -->
+  <!-- URLs from Django (for use in JavaScript) -->
   <script>
-    window.CLEAR_URL = "{% url 'api_conversations_clear' %}"; <!-- رابط API لمسح المحادثة -->
+    window.CLEAR_URL = "{% url 'api_conversations_clear' %}"; <!-- API URL for clearing the chat -->
     window.CHAT_TEXT_URL = "{% url 'chat_text' %}";           
-  </script><!-- رابط API لإرسال نص -->
+  </script><!-- API URL for sending text -->
 
-  <!-- سكربت الصفحة -->
+  <!-- page script -->
   <script>
-  (function () { // IIFE: تنفيذ فوري للكود
-    const form   = document.querySelector('.prompt-form');     // نموذج الإدخال
-    const input  = document.querySelector('.prompt-input');    // حقل النص
-    const chats  = document.getElementById('chats') || document.querySelector('.chats-container'); // الحاوية
-    const btnClr = document.getElementById('delete-chat-btn'); // زر الحذف
-    const suggs  = document.querySelectorAll('.suggestions-item'); // عناصر الاقتراحات
-    const suggestionsList = document.querySelector('.suggestions'); // قائمة الاقتراحات
+  (function () { // IIFE: runs immediately
+    const form   = document.querySelector('.prompt-form');     // input form
+    const input  = document.querySelector('.prompt-input');    // text input
+    const chats  = document.getElementById('chats') || document.querySelector('.chats-container'); // container
+    const btnClr = document.getElementById('delete-chat-btn'); // clear button
+    const suggs  = document.querySelectorAll('.suggestions-item'); // suggestion items
+    const suggestionsList = document.querySelector('.suggestions'); // suggestions list
 
     // CSRF token
     function getCookie(name) {
       const m = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
       return m ? m.pop() : '';
     }
-    const csrftoken = getCookie('csrftoken'); // جلب التوكين من الكوكيز
+    const csrftoken = getCookie('csrftoken'); // read the token from the cookies
 
     // Helpers
     function hideSuggestions() {
-      document.body.classList.add('chats-active'); // إخفاء الاقتراحات
+      document.body.classList.add('chats-active'); // hide suggestions
       if (suggestionsList) suggestionsList.classList.add('is-hidden');
     }
     function showSuggestions() {
-      document.body.classList.remove('chats-active'); // إظهار الاقتراحات
+      document.body.classList.remove('chats-active'); // show suggestions
       if (suggestionsList) suggestionsList.classList.remove('is-hidden');
     }
 
     function appendUser(text) {
-      const wrap = document.createElement('div'); // عنصر رسالة جديدة
+      const wrap = document.createElement('div'); // new message element
       wrap.className = 'message user-message';
       const p = document.createElement('p');
       p.className = 'message-text';
       p.textContent = text;
       wrap.appendChild(p);
       chats.appendChild(wrap);
-      chats.scrollTop = chats.scrollHeight; // سكرول لآخر رسالة
+      chats.scrollTop = chats.scrollHeight; // scroll to the latest message
       hideSuggestions();
     }
 
@@ -149,7 +149,7 @@
           'Content-Type': 'application/json',
           'X-CSRFToken': csrftoken
         },
-        body: JSON.stringify({ message: msg }) // إرسال الرسالة للنص
+        body: JSON.stringify({ message: msg }) // send the text message
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || 'Request failed');
@@ -162,31 +162,31 @@
       const msg = (input.value || '').trim();
       if (!msg) return;
 
-      appendUser(msg); // أضف رسالة المستخدم
+      appendUser(msg); // add the user's message
       input.value = '';
       input.focus();
 
       try {
-        await sendMessage(msg); // أرسل للسيرفر
+        await sendMessage(msg); // send to the server
       } catch (err) {
-        appendBot('⚠️ Error: ' + err.message); // عرض الخطأ
+        appendBot('⚠️ Error: ' + err.message); // show the error
       }
     });
 
-    // Suggestions click → عبّي وابعث فورًا
+    // Suggestions click → fill in and send immediately
     suggs.forEach(li => {
       li.addEventListener('click', () => {
         const t = li.querySelector('.text')?.textContent?.trim() || '';
         if (!t) return;
         input.value = t;
-        form.dispatchEvent(new Event('submit')); // محاكاة إرسال
+        form.dispatchEvent(new Event('submit')); // simulate a submit
       });
     });
 
-    // Clear: يحذف من DB + ينظّف الواجهة + يظهر الاقتراحات
+    // Clear: delete from the DB + clean up the UI + show suggestions
     btnClr?.addEventListener('click', async () => {
       try {
-        const sure = confirm("هل تريد حذف كل المحادثة؟");
+        const sure = confirm("Delete the whole conversation?");
         if (!sure) return;
 
         const r = await fetch(window.CLEAR_URL, {
@@ -197,21 +197,21 @@
         const data = await r.json().catch(() => ({}));
         if (!r.ok || !data.ok) throw new Error(data.error || 'Server error');
 
-        chats.innerHTML = ''; // إفراغ الواجهة
+        chats.innerHTML = ''; // empty the UI
         showSuggestions();
       } catch (err) {
-        alert('تعذّر الحذف: ' + (err.message || 'Server error'));
+        alert('Could not clear the chat: ' + (err.message || 'Server error'));
       }
     });
 
-    // عند التحميل: إذا في رسائل جاهزة (history)، فعّل الإخفاء
+    // on load: if saved messages exist (history), apply the hidden state
     if (chats.querySelector('.message')) {
       hideSuggestions();
     }
   })();
   </script>
 
-  <!-- سكربتك الخارجي (إن وجد) -->
+  <!-- external script (if any) -->
   <script src="{% static 'voiceapp/js/script.js' %}"></script>
 </body>
 </html>

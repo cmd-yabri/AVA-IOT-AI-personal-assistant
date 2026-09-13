@@ -23,8 +23,8 @@ from openai import OpenAI
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
-MAX_AUDIO_MB = getattr(settings, "MAX_AUDIO_MB", 25)                 # الحد الأقصى لحجم الملف (MB)
-CHUNK_SIZE   = getattr(settings, "AUDIO_CHUNK_SIZE", 1024 * 1024)    # حجم التشانك (بايت)
+MAX_AUDIO_MB = getattr(settings, "MAX_AUDIO_MB", 25)                 # maximum upload size (MB)
+CHUNK_SIZE   = getattr(settings, "AUDIO_CHUNK_SIZE", 1024 * 1024)    # chunk size (bytes)
 # =========================================
 
 LAST_AUDIO_REL = None 
@@ -32,7 +32,7 @@ LAST_AUDIO_REL = None
 
 def process_with_gpt(text: str) -> str:
     """
-    يولّد رد نصّي قصير بناء على التفريغ الصوتي.
+    Generate a short text reply to the transcription.
     """
     resp = client.chat.completions.create(
         model="gpt-4o-mini",
@@ -44,8 +44,8 @@ def process_with_gpt(text: str) -> str:
 
 def text_to_speech(text: str) -> str:
     """
-    يحوّل النص إلى ملف WAV ويحفظه تحت MEDIA_ROOT/audio/...
-    يعيد المسار النسبي داخل media (للتخزين في قاعدة البيانات أو الإرجاع).
+    Convert text to a WAV file saved under MEDIA_ROOT/audio/...
+    Returns the path relative to media (for storing in the database or returning).
     """
     global LAST_AUDIO_REL
     tts = client.audio.speech.create(
@@ -64,7 +64,7 @@ def text_to_speech(text: str) -> str:
 
 def _save_stream_to_file(input_stream, dest_path: str, max_bytes: int):
     """
-    يحفظ الـ RAW body (stream) إلى ملف مع حدّ أقصى للحجم.
+    Save the raw body (stream) to a file, enforcing a size limit.
     """
     total = 0
     os.makedirs(os.path.dirname(dest_path), exist_ok=True)
@@ -110,13 +110,13 @@ def content_negotiation(cls):
 @renderer_classes([JSONRenderer, BrowsableAPIRenderer])
 def upload_audio(request):
     """
-    يدعم:
-      - multipart/form-data (حقل 'audio' أو 'file')
-      - RAW audio/wav (يُقرأ مباشرة من request.stream)
+    Accepts:
+      - multipart/form-data ('audio' or 'file' field)
+      - raw audio/wav (read directly from request.stream)
 
-    السلوك:
-      - إذا Accept يحوي audio/wav أو ?format=wav أو X-Return-Audio: 1 → يرجّع WAV مباشرة (مع Content-Length)
-      - غير ذلك → JSON فيه transcription و gpt_response
+    Behaviour:
+      - if Accept contains audio/wav, or ?format=wav, or X-Return-Audio: 1 → return the WAV directly (with Content-Length)
+      - otherwise → JSON with transcription and gpt_response
     """
     if not OPENAI_API_KEY:
         return Response({"error": "OPENAI_API_KEY is missing"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -247,8 +247,8 @@ def upload_audio(request):
 @api_view(['GET'])
 def broadcast_audio(request):
     """
-    يُرجع آخر ملف صوت TTS تم توليده (إذا موجود).
-    مفيد للتحميل المنفصل أو الديباغ.
+    Return the most recently generated TTS audio file (if any).
+    Useful for a separate download or for debugging.
     """
     global LAST_AUDIO_REL
     if not LAST_AUDIO_REL:
@@ -271,7 +271,7 @@ def broadcast_audio(request):
 @api_view(['GET'])
 def check_variable(request):
     """
-    تفقد الجاهزية: True إذا آخر ملف TTS مولّد موجود.
+    Readiness check: True if a generated TTS file exists.
     """
     ready = bool(LAST_AUDIO_REL)
     return Response({"ready": ready}, status=status.HTTP_200_OK)

@@ -28,14 +28,14 @@ const char* URL_UPLOAD  = "/upload-audio/";
 #define I2S_DOUT 25
 #define I2S_BCLK 26
 #define I2S_LRC  22
-#define AMP_SHDN_PIN  17              // تعطيل/تمكين المضخِّم (HIGH للتشغيل)
+#define AMP_SHDN_PIN  17              // amplifier shutdown/enable (HIGH = on)
 
 
 /* ===== Recording (5s WAV 16kHz mono 16-bit) ===== */
 #define REC_PORT           I2S_NUM_0
 #define REC_SAMPLE_RATE    16000
 #define REC_BITS           I2S_BITS_PER_SAMPLE_16BIT
-#define REC_READ_LEN       (4 * 1024)   // 4096: DMA-friendly وبيخفف ضغط الهيب
+#define REC_READ_LEN       (4 * 1024)   // 4096: DMA-friendly and eases heap pressure
 #define REC_SECS           5
 #define WAV_HEADER_SIZE    44
 #define REC_CHANNELS       1
@@ -45,7 +45,7 @@ const char* URL_UPLOAD  = "/upload-audio/";
 #define PB_PORT            I2S_NUM_1
 #define PB_BITS            I2S_BITS_PER_SAMPLE_16BIT
 #define PB_IN_CHUNK        1024
-#define PB_OUT_CHUNK       (PB_IN_CHUNK * 4)  // أسوأ حالة (24k->48k ستيريو)
+#define PB_OUT_CHUNK       (PB_IN_CHUNK * 4)  // worst case (24k->48k stereo)
 #define BOOST_GAIN_SHIFT   1
 #define UPSAMPLE_24K_TO_48K 1
 
@@ -96,7 +96,7 @@ void setup() {
   pinMode(WIFI_LED, OUTPUT);  digitalWrite(WIFI_LED, LOW);
   pinMode(TRANS_LED, OUTPUT); digitalWrite(TRANS_LED, LOW);
   pinMode(BTN_PIN, INPUT_PULLDOWN); 
-  pinMode(AMP_SHDN_PIN, OUTPUT);                                  // دبوس تعطيل/تمكين الأمب
+  pinMode(AMP_SHDN_PIN, OUTPUT);                                  // amp shutdown/enable pin
   digitalWrite(AMP_SHDN_PIN, LOW);   
   Serial.println("\nESP32 voice (hardened): record 5s -> upload -> play WAV.");
   printMem("boot");
@@ -204,8 +204,8 @@ void i2sInitMic() {
   cfg.channel_format = I2S_CHANNEL_FMT_ONLY_LEFT;
   cfg.communication_format = I2S_COMM_FORMAT_STAND_I2S;
   cfg.intr_alloc_flags = 0;
-  cfg.dma_buf_count = 32;   // أقل من 64 لتخفيف استهلاك الذاكرة
-  cfg.dma_buf_len = 256;    // مجموع DMA = 32*256*2 بايت ≈ 16KB
+  cfg.dma_buf_count = 32;   // below 64 to reduce memory use
+  cfg.dma_buf_len = 256;    // total DMA = 32*256*2 bytes ≈ 16KB
   cfg.use_apll = true;
   cfg.tx_desc_auto_clear = false;
   cfg.fixed_mclk = 0;

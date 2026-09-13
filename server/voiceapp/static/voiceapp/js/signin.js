@@ -1,52 +1,52 @@
-// ========== تبديل النماذج Signin/Signup ==========
+// ========== Sign-in / sign-up form switching ==========
 
-// عناصر DOM
-const formsContainer = document.getElementById('forms-container'); // عنصر الحاوية للفورمين (signin/signup)
-const showSignup = document.getElementById('show-signup');         // رابط → أظهر نموذج التسجيل
-const showSignin = document.getElementById('show-signin');         // رابط → أظهر نموذج الدخول
+// DOM elements
+const formsContainer = document.getElementById('forms-container'); // container for both forms (signin/signup)
+const showSignup = document.getElementById('show-signup');         // link → show the sign-up form
+const showSignin = document.getElementById('show-signin');         // link → show the sign-in form
 
-// عند الضغط على رابط التسجيل
+// on clicking the sign-up link
 if (showSignup) {
   showSignup.addEventListener('click', (e) => {
-    // e.preventDefault(); // استعملها إذا بدك التبديل بدون تنقل بين الصفحات
-    formsContainer.classList.add('signup-active'); // إضافة كلاس → تفعّل CSS لإظهار signup
+    // e.preventDefault(); // use this to switch forms without navigating between pages
+    formsContainer.classList.add('signup-active'); // add the class → CSS shows sign-up
   });
 }
 
-// عند الضغط على رابط الدخول
+// on clicking the sign-in link
 if (showSignin) {
   showSignin.addEventListener('click', (e) => {
     // e.preventDefault();
-    formsContainer.classList.remove('signup-active'); // إزالة الكلاس → إظهار signin
+    formsContainer.classList.remove('signup-active'); // remove the class → show sign-in
   });
 }
 
-// دالة ذاتية التنفيذ: تفعل signup أو signin تلقائي حسب مسار الرابط
+// self-invoking function: pick signup or signin automatically from the URL path
 (function autoActivateByPath() {
-  const p = (window.location.pathname || '').toLowerCase(); // اجلب مسار الرابط الحالي
-  if (p.endsWith('/signup/') || p.includes('/signup')) {    // إذا كان الرابط يشير للتسجيل
-    formsContainer.classList.add('signup-active');          // فعّل نموذج signup
+  const p = (window.location.pathname || '').toLowerCase(); // get the current URL path
+  if (p.endsWith('/signup/') || p.includes('/signup')) {    // if the URL points to sign-up
+    formsContainer.classList.add('signup-active');          // activate the sign-up form
   } else {
-    formsContainer.classList.remove('signup-active');       // غير ذلك: أبقِ signin
+    formsContainer.classList.remove('signup-active');       // otherwise: keep sign-in
   }
 })();
 
 
-// ========== عرض/إخفاء الباسوورد ==========
+// ========== Show/hide password ==========
 document.querySelectorAll('.toggle-password').forEach(btn => {
-  // لكل زر تبديل كلمة المرور
+  // for each password toggle button
   btn.addEventListener('click', () => {
-    const targetSel = btn.getAttribute('data-target');  // اجلب الـ selector للحقل المستهدف
-    const input = document.querySelector(targetSel);    // حقل كلمة المرور
+    const targetSel = btn.getAttribute('data-target');  // get the selector of the target field
+    const input = document.querySelector(targetSel);    // password field
     if (!input) return;
 
-    const isHidden = input.getAttribute('type') === 'password'; // تحقق إذا الحقل مخفي (password)
-    input.setAttribute('type', isHidden ? 'text' : 'password'); // بدّل النوع (text ⇄ password)
+    const isHidden = input.getAttribute('type') === 'password'; // check whether the field is hidden (password)
+    input.setAttribute('type', isHidden ? 'text' : 'password'); // swap the type (text ⇄ password)
 
-    const icon = btn.querySelector('.material-symbols-rounded'); // أيقونة العين
-    if (icon) icon.textContent = isHidden ? 'visibility_off' : 'visibility'; // بدّل النص للأيقونة
+    const icon = btn.querySelector('.material-symbols-rounded'); // eye icon
+    if (icon) icon.textContent = isHidden ? 'visibility_off' : 'visibility'; // swap the icon text
 
-    // تحديث صفات الوصول (Accessibility)
+    // update accessibility attributes
     btn.setAttribute('aria-label', isHidden ? 'Hide password' : 'Show password');
     btn.setAttribute('aria-pressed', isHidden ? 'true' : 'false');
   });
