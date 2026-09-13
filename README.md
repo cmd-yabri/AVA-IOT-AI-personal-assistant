@@ -5,7 +5,7 @@ small amplifier. Press the button, speak for five seconds, and AVA answers out l
 
 The ESP32 records the audio and uploads it to a Python server, which transcribes it
 (Whisper), generates a short reply (GPT-4o mini), turns the reply into speech (TTS),
-and streams the WAV back in the same HTTP response for the device to play.
+and returns the WAV in the same HTTP response. The device plays it as it downloads.
 
 Built as my graduation project.
 
@@ -31,7 +31,7 @@ sequenceDiagram
     OpenAI-->>Server: 24 kHz audio
     Server-->>ESP32: audio/wav in the same response
     ESP32->>ESP32: parse WAV header, upsample 24→48 kHz
-    ESP32->>User: play through MAX98357A speaker
+    ESP32->>User: play via MAX98357A amplifier while downloading
 ```
 
 One request, one response: the device never polls. The server saves both sides of
@@ -63,20 +63,33 @@ the exchange as `Conversation` rows.
 
 Requires Python 3.10+ and an OpenAI API key.
 
-```bash
-cd server
-python -m venv .venv
-.venv\Scripts\activate          # macOS/Linux: source .venv/bin/activate
-pip install -r requirements.txt
-python manage.py migrate
-```
-
-Set the environment, then start the server on all interfaces so the ESP32 can reach it:
+Windows (PowerShell):
 
 ```powershell
+cd server
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+python manage.py migrate
+
 $env:OPENAI_API_KEY = "sk-..."
 python manage.py runserver 0.0.0.0:8000
 ```
+
+macOS / Linux:
+
+```bash
+cd server
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python manage.py migrate
+
+export OPENAI_API_KEY="sk-..."
+python manage.py runserver 0.0.0.0:8000
+```
+
+The server listens on all interfaces (`0.0.0.0`) so the ESP32 can reach it over the LAN.
 
 | Variable | Default | Purpose |
 |---|---|---|
@@ -110,8 +123,9 @@ curl -X POST -H "Content-Type: audio/wav" --data-binary @sample.wav \
 | `GET` | `/get-conversations/` | Conversation history for the signed-in user. |
 
 Browser pages: `/` (landing), `/signin/`, `/signup/` and `/chat/`; sign out with
-`POST /signout/`. The chat page posts `{"message": "..."}` to `/chat-text/` and clears history with
-`POST /api/conversations/clear/`; both need a signed-in session and a CSRF token.
+`POST /signout/`. The chat page posts `{"message": "..."}` to `/chat-text/` and
+clears history with `POST /api/conversations/clear/`. Both need a signed-in
+session and a CSRF token.
 
 ## Limitations and next steps
 
