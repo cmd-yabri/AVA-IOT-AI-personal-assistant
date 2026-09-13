@@ -44,7 +44,8 @@ the exchange as `Conversation` rows.
 | [`firmware/ava_esp32/ava_esp32.ino`](firmware/ava_esp32/ava_esp32.ino) | Button debounce, I²S recording to SPIFFS, hand-built multipart upload over a raw `WiFiClient`, chunked-transfer decoding, WAV header parsing, 24→48 kHz upsampling and I²S playback. |
 | [`server/voiceapp/views.py`](server/voiceapp/views.py) | `upload_audio`: accepts multipart *or* a raw WAV body, enforces a size limit while streaming to disk, runs the speech → GPT → speech pipeline, and returns JSON or WAV depending on the client. |
 | [`server/voiceapp/models.py`](server/voiceapp/models.py) | `Conversation` — one row per user utterance and per assistant reply. |
-| [`server/voiceapp/templates/`](server/voiceapp/templates/voiceapp), [`static/`](server/voiceapp/static/voiceapp) | Browser sign-in and chat pages. |
+| [`server/voiceapp/pages.py`](server/voiceapp/pages.py) | Browser side: sign-in, sign-up and a text chat that reuses the same GPT call, saving history per user. |
+| [`server/voiceapp/templates/`](server/voiceapp/templates/voiceapp), [`static/`](server/voiceapp/static/voiceapp) | The sign-in and chat pages. |
 
 ## Hardware
 
@@ -108,6 +109,10 @@ curl -X POST -H "Content-Type: audio/wav" --data-binary @sample.wav \
 | `GET` | `/check-variable/` | `{ready: true}` once a reply has been generated. |
 | `GET` | `/get-conversations/` | Conversation history for the signed-in user. |
 
+Browser pages: `/` (landing), `/signin/`, `/signup/` and `/chat/`; sign out with
+`POST /signout/`. The chat page posts `{"message": "..."}` to `/chat-text/` and clears history with
+`POST /api/conversations/clear/`; both need a signed-in session and a CSRF token.
+
 ## Limitations and next steps
 
 - **Single-device state.** The latest reply is tracked in a module-level variable, so
@@ -117,4 +122,5 @@ curl -X POST -H "Content-Type: audio/wav" --data-binary @sample.wav \
   network can spend API credit. A per-device token sent as a header would fix this.
 - **Fixed five-second recording.** Voice-activity detection on the ESP32 would let
   users speak naturally instead of racing a timer.
-- **Generated audio accumulates** under `server/media/audio/`; nothing cleans it up.
+- **Audio accumulates.** Recordings and spoken replies are kept under
+  `server/media/audio/` and nothing cleans them up.

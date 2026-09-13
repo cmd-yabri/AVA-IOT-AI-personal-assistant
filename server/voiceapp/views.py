@@ -11,8 +11,9 @@ from rest_framework.decorators import (
     parser_classes, renderer_classes
 )
 from rest_framework.permissions import AllowAny, IsAuthenticated
-from rest_framework.parsers import JSONParser, FormParser, MultiPartParser, FileUploadParser
+from rest_framework.parsers import JSONParser, FormParser, MultiPartParser
 from rest_framework.renderers import JSONRenderer, BrowsableAPIRenderer
+from rest_framework.negotiation import DefaultContentNegotiation
 
 from .models import Conversation
 from voiceapp.serializers import ConversationSerializer
@@ -20,7 +21,7 @@ from voiceapp.serializers import ConversationSerializer
 from openai import OpenAI
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-client = OpenAI(api_key=OPENAI_API_KEY)
+client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
 MAX_AUDIO_MB = getattr(settings, "MAX_AUDIO_MB", 25)                 # الحد الأقصى لحجم الملف (MB)
 CHUNK_SIZE   = getattr(settings, "AUDIO_CHUNK_SIZE", 1024 * 1024)    # حجم التشانك (بايت)
@@ -84,16 +85,34 @@ def _save_stream_to_file(input_stream, dest_path: str, max_bytes: int):
     return True, total
 
 
-@permission_classes([AllowAny])
-@authentication_classes([AllowAny])
-@parser_classes([JSONParser, FormParser, MultiPartParser, FileUploadParser])
-@renderer_classes([JSONRenderer, BrowsableAPIRenderer])
+class ViewDecidesFormat(DefaultContentNegotiation):
+    """
+    upload_audio picks WAV or JSON itself (Accept, ?format=wav, X-Return-Audio).
+    DRF's default negotiation runs first and answers ?format=wav with 404 and
+    Accept: audio/wav with 406, so the view never got the chance.
+    """
+    def select_renderer(self, request, renderers, format_suffix=None):
+        return renderers[0], renderers[0].media_type
+
+
+def content_negotiation(cls):
+    def decorator(func):
+        func.content_negotiation_class = cls
+        return func
+    return decorator
+
+
 @api_view(['POST'])
+@content_negotiation(ViewDecidesFormat)
+@permission_classes([AllowAny])
+@authentication_classes([])
+@parser_classes([JSONParser, FormParser, MultiPartParser])
+@renderer_classes([JSONRenderer, BrowsableAPIRenderer])
 def upload_audio(request):
     """
     يدعم:
       - multipart/form-data (حقل 'audio' أو 'file')
-      - RAW audio/wav (عبر FileUploadParser أو wsgi.input)
+      - RAW audio/wav (يُقرأ مباشرة من request.stream)
 
     السلوك:
       - إذا Accept يحوي audio/wav أو ?format=wav أو X-Return-Audio: 1 → يرجّع WAV مباشرة (مع Content-Length)
@@ -109,13 +128,11 @@ def upload_audio(request):
     temp_path = os.path.join(temp_dir, temp_filename)
 
     audio_file = None
-    if hasattr(request, "FILES"):
+    if (request.content_type or "").startswith("multipart/form-data"):
         audio_file = request.FILES.get('audio') or request.FILES.get('file')
-
-    if audio_file is None and hasattr(request, "data"):
-        possible = request.data.get('file') or request.data.get('audio')
-        if getattr(possible, 'read', None):
-            audio_file = possible
+        if audio_file is None:
+            return Response({"error": "Send the recording in an 'audio' or 'file' field"},
+                            status=status.HTTP_400_BAD_REQUEST)
 
     if audio_file:
         size_known = getattr(audio_file, 'size', None)
@@ -161,11 +178,16 @@ def upload_audio(request):
                 response_format="text"
             )
 
+        audio_input_rel = f"audio/input_{uuid.uuid4()}.wav"
+        audio_input_abs = os.path.join(settings.MEDIA_ROOT, audio_input_rel)
+        os.makedirs(os.path.dirname(audio_input_abs), exist_ok=True)
+        os.replace(temp_path, audio_input_abs)
+
         try:
             Conversation.objects.create(
                 is_CHATGPT=False,
                 message=transcription,
-                audio_input=temp_path
+                audio_input=audio_input_rel
             )
         except Exception:
             pass
