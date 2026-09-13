@@ -15,8 +15,15 @@ db.sqlite3
 # Logs
 *.log
 
-# Media / uploads
-frontend&backend/media/
+# Recorded and generated audio
+server/media/
+
+# Firmware credentials (copy config.example.h to config.h)
+firmware/ava_esp32/config.h
+
+# Editors
+.vscode/
+.idea/
 
 # Node
 node_modules/

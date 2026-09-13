@@ -6,12 +6,13 @@
 #include <string.h>
 #include "esp_heap_caps.h"
 
-/* ===== Wi-Fi ===== */
-#define WIFI_SSID "YOUR_WIFI_SSID"
-#define WIFI_PASS "YOUR_WIFI_PASSWORD"
+/* ===== Wi-Fi + server =====
+ * WIFI_SSID, WIFI_PASS and AVA_SERVER_BASE live in config.h, which is
+ * git-ignored. Copy config.example.h to config.h and fill it in. */
+#include "config.h"
 
 /* ===== Server ===== */
-const char* SERVER_BASE = "http://192.168.229.121:8000";
+const char* SERVER_BASE = AVA_SERVER_BASE;
 const char* URL_UPLOAD  = "/upload-audio/";
 
 #define WIFI_LED   21
